@@ -29,6 +29,7 @@ from json import (
 from os import (
     sep       as os_separator,
     devnull   as os_devnull,
+    environ   as os_environ,
     getpid    as os_getpid,
     makedirs  as os_makedirs,
     listdir   as os_listdir,
@@ -128,6 +129,18 @@ from customtkinter import (
     set_window_scaling
 )
 
+try:
+    from tkinterdnd2 import COPY as DND_COPY, DND_FILES, TkinterDnD
+except ImportError:
+    DND_COPY = "copy"
+    DND_FILES = None
+    TkinterDnD = None
+
+try:
+    from ._dnd import parse_dropped_file_paths
+except ImportError:
+    from _dnd import parse_dropped_file_paths
+
 if sys.stdout is None: sys.stdout = open(os_devnull, "w", encoding="utf-8", errors="replace")
 else:                  sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -144,6 +157,9 @@ app_name   = "FluidFrames"
 version    = "2026.3"
 githubme   = "https://github.com/Djdefrag/FluidFrames/releases"
 telegramme = "https://linktr.ee/j3ngystudio"
+drag_and_drop_error_reported = False
+drag_and_drop_loaded = False
+drag_and_drop_disabled = False
 
 app_name_color          = "#F08080"
 background_color        = "#000000"
@@ -170,7 +186,7 @@ video_codec_list   = [
 OUTPUT_PATH_CODED    = "Same path as input files"
 DOCUMENT_PATH        = os_path_join(os_path_expanduser('~'), 'Documents')
 USER_PREFERENCE_PATH = find_by_relative_path(f"{DOCUMENT_PATH}{os_separator}{app_name}_{version}_UserPreference.json")
-FFMPEG_EXE_PATH      = find_by_relative_path(f"Assets{os_separator}ffmpeg.exe")
+FFMPEG_EXE_PATH      = os_environ.get("FLUIDFRAMES_FFMPEG_EXE", find_by_relative_path(f"Assets{os_separator}ffmpeg.exe"))
 EXIFTOOL_EXE_PATH    = find_by_relative_path(f"Assets{os_separator}exiftool.exe")
 
 COMPLETED_STATUS = "Completed"
@@ -2151,23 +2167,35 @@ def check_if_file_is_video(file: str) -> bool:
 def check_supported_selected_files(uploaded_file_list: list) -> list:
     return [file for file in uploaded_file_list if any(supported_extension in file for supported_extension in supported_file_extensions)]
 
-def show_error_message(exception: str) -> None:
-    messageBox_title    = "Frame generation error"
-    messageBox_subtitle = "Please report the error on Github or Telegram"
-    messageBox_text     = f"\n {str(exception)} \n"
+def register_drop_target(widget) -> None:
+    global drag_and_drop_error_reported
+    global drag_and_drop_loaded
+    global drag_and_drop_disabled
 
-    MessageBox(
-        messageType   = "error",
-        title         = messageBox_title,
-        subtitle      = messageBox_subtitle,
-        default_value = None,
-        option_list   = [messageBox_text]
-    )
+    if drag_and_drop_disabled:
+        return
 
-def open_files_action() -> None:
-    info_message.set("Selecting files")
+    if TkinterDnD is None or DND_FILES is None:
+        if not drag_and_drop_error_reported:
+            print(f"[{app_name}] Drag and drop disabled: tkinterdnd2 is not installed")
+            drag_and_drop_error_reported = True
+        drag_and_drop_disabled = True
+        return
 
-    uploaded_files_list    = list(filedialog.askopenfilenames())
+    try:
+        if not drag_and_drop_loaded:
+            TkinterDnD._require(window)
+            drag_and_drop_loaded = True
+        widget.drop_target_register(DND_FILES)
+        widget.dnd_bind("<<Drop>>", drop_files_action)
+    except Exception as exception:
+        if not drag_and_drop_error_reported:
+            print(f"[{app_name}] Drag and drop disabled: {exception}")
+            drag_and_drop_error_reported = True
+        drag_and_drop_disabled = True
+
+def load_input_files(uploaded_files_list: list) -> None:
+    uploaded_files_list = [str(file_path) for file_path in uploaded_files_list]
     uploaded_files_counter = len(uploaded_files_list)
 
     supported_files_list    = check_supported_selected_files(uploaded_files_list)
@@ -2194,6 +2222,35 @@ def open_files_action() -> None:
 
     else: 
         info_message.set("Not supported files :(")
+
+def show_error_message(exception: str) -> None:
+    messageBox_title    = "Frame generation error"
+    messageBox_subtitle = "Please report the error on Github or Telegram"
+    messageBox_text     = f"\n {str(exception)} \n"
+
+    MessageBox(
+        messageType   = "error",
+        title         = messageBox_title,
+        subtitle      = messageBox_subtitle,
+        default_value = None,
+        option_list   = [messageBox_text]
+    )
+
+def open_files_action() -> None:
+    info_message.set("Selecting files")
+
+    load_input_files(list(filedialog.askopenfilenames()))
+
+def drop_files_action(event) -> str:
+    info_message.set("Dropping files")
+
+    event_widget = getattr(event, "widget", None)
+    tk_instance = getattr(event_widget, "tk", None)
+    splitlist = getattr(tk_instance, "splitlist", None)
+    uploaded_files_list = parse_dropped_file_paths(getattr(event, "data", ""), splitlist=splitlist)
+    load_input_files(uploaded_files_list)
+
+    return DND_COPY
 
 def open_output_path_action() -> None:
     asked_selected_output_path = filedialog.askdirectory()
@@ -2294,6 +2351,9 @@ def place_loadFile_section() -> None:
     background.place(relx = 0.0, rely = 0.0, relwidth = 0.5, relheight = 1.0)
     input_file_text.place(relx = 0.25, rely = 0.4,  anchor = "center")
     input_file_button.place(relx = 0.25, rely = 0.5, anchor = "center")
+    register_drop_target(background)
+    register_drop_target(input_file_text)
+    register_drop_target(input_file_button)
 
 def place_app_name() -> None:
     background = CTkFrame(
