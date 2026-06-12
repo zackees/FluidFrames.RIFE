@@ -28,7 +28,8 @@ from os import (
     environ    as os_environ,
     makedirs   as os_makedirs,
     listdir    as os_listdir,
-    remove     as os_remove
+    remove     as os_remove,
+    replace    as os_replace
 )
 
 from os.path import (
@@ -42,7 +43,10 @@ from os.path import (
 )
 
 # Third-party library imports
+from hashlib          import sha256 as hashlib_sha256
 from natsort          import natsorted
+from requests         import get as requests_get
+from zstandard        import ZstdDecompressor
 from moviepy.video.io import ImageSequenceClip 
 from onnxruntime      import InferenceSession as InferenceSession
 
@@ -219,6 +223,44 @@ supported_video_extensions = [
 
 # AI -------------------
 
+MODEL_MANIFEST_BASE_URL = "https://raw.githubusercontent.com/zackees/ai-image-video-models/main/assets/fluidframes/rife"
+
+def get_model_manifest_entry(model_name: str) -> dict:
+    model_key = model_name.removesuffix("_fp32.onnx")
+    response = requests_get(f"{MODEL_MANIFEST_BASE_URL}/{model_key}/manifest.json", timeout = 60)
+    response.raise_for_status()
+    manifest = response.json()
+    return manifest[manifest["latest"]]
+
+
+def ensure_AI_model_file(model_path: str) -> None:
+    if os_path_exists(model_path):
+        return
+
+    model_name = os_path_basename(model_path)
+    os_makedirs(os_path_dirname(model_path), exist_ok = True)
+    entry = get_model_manifest_entry(model_name)
+
+    zst_path  = f"{model_path}.zst"
+    file_hash = hashlib_sha256()
+    with requests_get(entry["href"], timeout = 60 * 5, stream = True) as response:
+        response.raise_for_status()
+        with open(zst_path, "wb") as compressed:
+            for chunk in response.iter_content(chunk_size = 1 << 20):
+                compressed.write(chunk)
+                file_hash.update(chunk)
+
+    if file_hash.hexdigest() != entry["sha256"]:
+        os_remove(zst_path)
+        raise ValueError(f"sha256 mismatch for {model_name}, download corrupted")
+
+    temp_path = f"{model_path}.tmp"
+    with open(zst_path, "rb") as compressed, open(temp_path, "wb") as decompressed:
+        ZstdDecompressor().copy_stream(compressed, decompressed)
+    os_replace(temp_path, model_path)
+    os_remove(zst_path)
+
+
 class AI:
 
     # CLASS INIT FUNCTIONS
@@ -239,6 +281,7 @@ class AI:
 
         # Calculated variables
         self.AI_model_path    = find_by_relative_path(f"AI-onnx{os_separator}{self.AI_model_name}_fp32.onnx")
+        ensure_AI_model_file(self.AI_model_path)
         self.inferenceSession = self._load_inferenceSession()
 
     def _load_inferenceSession(self) -> InferenceSession:

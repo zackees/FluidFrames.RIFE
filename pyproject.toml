@@ -25,7 +25,6 @@ fluidframes = "fluidframes_rife.cli:main"
 fluidframes_rife = [
     "requirements.runtime.lock.txt",
     "Assets/*",
-    "AI-onnx/*",
 ]
 
 [tool.pytest.ini_options]

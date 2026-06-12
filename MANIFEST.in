@@ -1,4 +1,3 @@
 include pyproject.toml
 include src/fluidframes_rife/requirements.runtime.lock.txt
 recursive-include src/fluidframes_rife/Assets *
-recursive-include src/fluidframes_rife/AI-onnx *
