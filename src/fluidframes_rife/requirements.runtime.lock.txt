@@ -32,3 +32,4 @@ sympy==1.14.0
 tkinterdnd2==0.4.4.1
 tqdm==4.67.1
 urllib3==2.7.0
+zstandard==0.25.0
