@@ -15,7 +15,7 @@ dependencies = [
     "uv>=0.6.4",
     "uv-iso-env>=1.0.44",
 ]
-version = "3.12.0"
+version = "3.13.0"
 
 [project.scripts]
 fluidframes-rife = "fluidframes_rife.cli:main"

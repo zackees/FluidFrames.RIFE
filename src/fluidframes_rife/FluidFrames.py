@@ -125,7 +125,7 @@ def find_by_relative_path(relative_path: str) -> str:
 
 
 app_name   = "FluidFrames"
-version    = "3.12"
+version    = "3.13"
 dark_color = "#080808"
 drag_and_drop_error_reported = False
 drag_and_drop_loaded = False
